@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 
 const API_URL = 'https://queue-times.com/parks/284/queue_times.json'; // 284 = Universal Studios Japan
+const STALE_MS = 60 * 60 * 1000;
 
 async function fetchRides() {
   const res = await fetch(API_URL, { headers: { 'User-Agent': 'usj-wait-times (personal dashboard)' } });
@@ -25,7 +26,9 @@ function appendRecord(dir, rides, date = new Date()) {
   const time = date.toISOString().slice(0, 16) + 'Z';
   const file = path.join(dir, `${time.slice(0, 7)}.csv`);
   if (!fs.existsSync(file)) fs.writeFileSync(file, 'time,ride_id,open,wait\n');
-  fs.appendFileSync(file, rides.map((r) => `${time},${r.id},${r.isOpen ? 1 : 0},${r.wait}\n`).join(''));
+  // 閉園後も最後の値が「運営中」のまま残るため、最終更新から60分以上経った値は休止扱いで記録する
+  const isFresh = (r) => date - Date.parse(r.lastUpdated) < STALE_MS;
+  fs.appendFileSync(file, rides.map((r) => `${time},${r.id},${r.isOpen && isFresh(r) ? 1 : 0},${r.wait}\n`).join(''));
 
   // 英語名の台帳（新アトラクション追加時の確認用）
   const namesFile = path.join(dir, 'rides.json');
