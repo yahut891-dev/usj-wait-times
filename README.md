@@ -23,6 +23,7 @@ node server.js
 
 - どちらも `collect.js` で Queue-Times.com の公開API（`/parks/284/queue_times.json`、284 = USJ）を取得し、月別CSV（`YYYY-MM.csv`、列 = time(UTC), ride_id, open, wait）に追記します。
 - 集計時は両方を読み、同じ5分枠の重複は1件にまとめます。
+- 閉園後も Queue-Times に最後の値が「運営中」で残るため、最終更新から60分以上経った値は休止（open=0）として記録します。
 - `server.js` は、フォルダがGitリポジトリなら1時間ごとに `git pull` して `data/cloud/` を取り込みます。
 - 過去データのさかのぼり取得はできません（Queue-Times等の履歴ページはボット対策で取得不可）。記録は収集を始めた時点からです。
 
