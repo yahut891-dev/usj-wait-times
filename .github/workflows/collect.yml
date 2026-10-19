@@ -1,4 +1,5 @@
 # PCの電源に関係なく、GitHub上で5分ごとに待ち時間を記録する（data/cloud/ にコミット）
+# あわせて公開版（GitHub Pages）を生成・デプロイする
 name: collect-wait-times
 
 on:
@@ -6,9 +7,6 @@ on:
     # UTC表記。日本時間 7:00〜23:55 の間、5分ごと（GitHub側の混雑で遅延することがある）
     - cron: '*/5 22-23,0-14 * * *'
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 concurrency:
   group: collect
@@ -18,6 +16,8 @@ jobs:
   collect:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,3 +33,23 @@ jobs:
           git commit -m "collect: $(date -u +%Y-%m-%dT%H:%MZ)"
           git pull --rebase
           git push
+      # 公開版の生成（収集結果を含めた最新の data/cloud から作る）
+      - run: node build-public.js --out _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  # Pages のデプロイは別ジョブ。Pages未設定などで失敗しても収集（上のジョブ）には影響しない
+  deploy:
+    needs: collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

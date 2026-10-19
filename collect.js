@@ -2,6 +2,7 @@
 // ローカル（server.js から呼び出し）と GitHub Actions（CLI実行）の両方で使う。
 //   CLI: node collect.js --dir data/cloud
 // CSV: data/<dir>/YYYY-MM.csv  列 = time(UTC ISO, 分単位), ride_id, open(1/0), wait(分)
+// あわせて data/<dir>/rides.json（英語名の台帳）と latest.json（最新の取得結果）を更新する
 const fs = require('fs');
 const path = require('path');
 
@@ -38,10 +39,14 @@ function appendRecord(dir, rides, date = new Date()) {
   fs.writeFileSync(namesFile, JSON.stringify(known, null, 2) + '\n');
 }
 
+// 取得してCSVに追記し、最新値を latest.json にも保存する（公開版の「現在」表示に使う）
 async function collect(dir) {
   const rides = await fetchRides();
-  appendRecord(dir, rides);
-  return rides;
+  const date = new Date();
+  appendRecord(dir, rides, date);
+  const latest = { fetchedAt: date.toISOString(), rides };
+  fs.writeFileSync(path.join(dir, 'latest.json'), JSON.stringify(latest) + '\n');
+  return latest;
 }
 
 module.exports = { fetchRides, appendRecord, collect };
@@ -50,6 +55,6 @@ if (require.main === module) {
   const i = process.argv.indexOf('--dir');
   const dir = path.resolve(__dirname, i > 0 ? process.argv[i + 1] : 'data/local');
   collect(dir)
-    .then((rides) => console.log(`取得 ${rides.length}件 → ${dir}`))
+    .then((latest) => console.log(`取得 ${latest.rides.length}件 → ${dir}`))
     .catch((err) => { console.error(`取得失敗: ${err.message}`); process.exit(1); });
 }

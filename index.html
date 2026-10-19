@@ -140,7 +140,13 @@ let selectedHourId = 'park';
 const color = (w) => w <= 20 ? 'var(--w1)' : w <= 45 ? 'var(--w2)' : w <= 90 ? 'var(--w3)' : 'var(--w4)';
 const fmtTime = (d) => new Date(d).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const getJson = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+const getJson = (u) => fetch(u, { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+
+// ローカル版（server.js の /api/*）と公開版（GitHub Pages、build-public.js が出力する静的JSON）の切り替え
+const IS_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+const api = IS_LOCAL
+  ? { now: '/api/now', periods: '/api/periods', hourly: (p) => `/api/hourly?period=${encodeURIComponent(p)}` }
+  : { now: 'site-data/now.json', periods: 'site-data/periods.json', hourly: (p) => `site-data/hourly-${encodeURIComponent(p)}.json` };
 
 // ---------- タブ ----------
 document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
@@ -153,17 +159,20 @@ document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('cli
 // ---------- 現在 ----------
 async function loadNow() {
   try {
-    now = await getJson('/api/now');
+    now = await getJson(api.now);
     renderNow();
   } catch {
-    $('updated').innerHTML = '<span class="error">サーバーに接続できません</span>';
+    $('updated').innerHTML = `<span class="error">${IS_LOCAL ? 'サーバーに接続できません' : 'データを読み込めませんでした'}</span>`;
   }
 }
 
 function renderNow() {
   const { latest } = now;
   if (!latest) { $('updated').textContent = 'データ取得待ち…'; return; }
-  $('updated').textContent = `最終取得 ${fmtTime(latest.fetchedAt)}（5分ごとに自動更新）`;
+  const day = new Date(latest.fetchedAt).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', timeZone: 'Asia/Tokyo' });
+  $('updated').textContent = IS_LOCAL
+    ? `最終取得 ${fmtTime(latest.fetchedAt)}（5分ごとに自動更新）`
+    : `最終取得 ${day} ${fmtTime(latest.fetchedAt)}（GitHub Actionsで定期取得した時点の値です）`;
 
   const open = latest.rides.filter((r) => r.isOpen);
   const avg = open.length ? Math.round(open.reduce((s, r) => s + r.wait, 0) / open.length) : 0;
@@ -234,7 +243,7 @@ $('hideClosed').addEventListener('change', renderNow);
 // ---------- 時間帯分析 ----------
 async function initHourly() {
   try {
-    const { months, years } = await getJson('/api/periods');
+    const { months, years } = await getJson(api.periods);
     const opt = (v, label) => `<option value="${v}">${label}</option>`;
     $('period').innerHTML =
       `<optgroup label="月">${months.map((m) => opt(m, `${m.slice(0, 4)}年${Number(m.slice(5))}月`)).join('')}</optgroup>` +
@@ -247,7 +256,7 @@ async function initHourly() {
 }
 
 async function loadHourly() {
-  hourlyData = await getJson(`/api/hourly?period=${encodeURIComponent($('period').value)}`);
+  hourlyData = await getJson(api.hourly($('period').value));
   renderHourly();
 }
 
@@ -305,7 +314,8 @@ $('heat').addEventListener('click', (e) => {
 });
 
 loadNow();
-setInterval(loadNow, 60 * 1000); // サーバー側は5分間隔で取得。表示は1分ごとに同期
+// ローカルはサーバーと1分ごとに同期。公開版はActionsの更新間隔に合わせて5分ごと
+setInterval(loadNow, (IS_LOCAL ? 1 : 5) * 60 * 1000);
 </script>
 </body>
 </html>
