@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>USJ待ち時間</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --surface: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e4e2dc;
+    --accent: #2f5bd3; --empty: #efeee9;
+    --w1: #9cc8a6; --w2: #e9c46a; --w3: #e98a4f; --w4: #d1495b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141416; --surface: #1e1e21; --text: #ececee; --muted: #9a9aa2; --line: #2e2e33;
+      --accent: #7b9cff; --empty: #26262a;
+      --w1: #5f9e70; --w2: #c9a43f; --w3: #d07338; --w4: #c4404f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  h1 { font-size: 22px; margin: 0; }
+  .updated { color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; gap: 4px; margin: 16px 0 0; border-bottom: 1px solid var(--line); }
+  .tabs button { font: inherit; background: none; border: 0; padding: 8px 14px; color: var(--muted); cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  [hidden] { display: none !important; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+  .stat .label { color: var(--muted); font-size: 12px; }
+  .stat .value { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .stat .value small { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 2px; }
+  .stat .sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0 8px; font-size: 13px; color: var(--muted); }
+  .toolbar select, .toolbar input { font: inherit; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-left: auto; }
+  .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; background: var(--c); vertical-align: -1px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+  .rides { list-style: none; margin: 0; padding: 6px 0; }
+  .ride { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr) 60px; gap: 12px; align-items: center;
+    padding: 7px 14px; cursor: pointer; }
+  .ride:hover, .ride.sel { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+  .ride .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+  .ride .bar { height: 14px; border-radius: 3px; background: var(--c); min-width: 3px; }
+  .ride .wait { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .ride.closed .name, .ride.closed .wait { color: var(--muted); font-weight: 400; }
+  .ride .stale { color: var(--muted); font-size: 11px; font-weight: 400; display: block; }
+  .chart { padding: 14px; margin-top: 16px; }
+  .chart h2 { font-size: 15px; margin: 0 0 8px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  .heat-wrap { overflow-x: auto; }
+  table.heat { border-collapse: separate; border-spacing: 2px; width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .heat th { font-weight: 500; color: var(--muted); padding: 4px; white-space: nowrap; }
+  .heat th.rname { text-align: left; max-width: 260px; overflow: hidden; text-overflow: ellipsis; font-size: 13px; color: var(--text); }
+  .heat td { text-align: center; padding: 5px 2px; border-radius: 3px; min-width: 34px; background: var(--c, var(--empty)); }
+  .heat td.avg { background: none; font-weight: 600; }
+  .heat tr.row { cursor: pointer; }
+  .heat tr.row:hover th.rname, .heat tr.sel th.rname { color: var(--accent); }
+  .heat tr.park th.rname { font-weight: 650; }
+  footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
+  footer a { color: var(--accent); }
+  .error { color: var(--w4); }
+  @media (max-width: 560px) {
+    .ride { grid-template-columns: minmax(0, 1fr) 56px; }
+    .ride .bar { grid-column: 1 / -1; grid-row: 2; }
+    .legend { margin-left: 0; }
+    .heat th.rname { max-width: 140px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>USJ アトラクション待ち時間</h1>
+    <span class="updated" id="updated">読み込み中…</span>
+  </header>
+
+  <nav class="tabs">
+    <button class="on" data-tab="now">現在</button>
+    <button data-tab="hourly">時間帯分析</button>
+  </nav>
+
+  <div class="legend" style="margin-top:12px;font-size:13px;color:var(--muted)">
+    <span style="--c:var(--w1)">〜20分</span>
+    <span style="--c:var(--w2)">〜45分</span>
+    <span style="--c:var(--w3)">〜90分</span>
+    <span style="--c:var(--w4)">90分〜</span>
+  </div>
+
+  <!-- 現在 -->
+  <section id="tab-now">
+    <div class="stats" id="stats"></div>
+    <div class="toolbar">
+      <label>並び順
+        <select id="sort">
+          <option value="wait">待ち時間が長い順</option>
+          <option value="name">名前順</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="hideClosed"> 休止中を隠す</label>
+    </div>
+    <div class="panel"><ul class="rides" id="rides"></ul></div>
+    <section class="panel chart">
+      <h2 id="trendTitle">本日の推移</h2>
+      <div id="trend"><p class="hint">アトラクションをクリックすると本日の待ち時間推移を表示します。</p></div>
+    </section>
+  </section>
+
+  <!-- 時間帯分析 -->
+  <section id="tab-hourly" hidden>
+    <div class="toolbar">
+      <label>期間 <select id="period"></select></label>
+      <span id="periodInfo"></span>
+    </div>
+    <div class="panel chart heat-wrap" id="heat"><p class="hint">読み込み中…</p></div>
+    <section class="panel chart">
+      <h2 id="hourTitle">時間帯別の平均待ち時間</h2>
+      <div id="hourChart"><p class="hint">表の行をクリックすると、そのアトラクションの時間帯別平均（パーク平均との比較）を表示します。</p></div>
+    </section>
+    <p class="hint" style="margin-top:12px">※ 各時間帯（日本時間）の運営中の記録の平均値。記録が少ない期間は値がぶれやすくなります。</p>
+  </section>
+
+  <footer>
+    データ提供: <a href="https://queue-times.com/" target="_blank" rel="noopener">Powered by Queue-Times.com</a>（非公式データ。実際の待ち時間と異なる場合があります）
+  </footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let now = { latest: null, today: {} };
+let hourlyData = null;
+let selectedId = null;
+let selectedHourId = 'park';
+
+const color = (w) => w <= 20 ? 'var(--w1)' : w <= 45 ? 'var(--w2)' : w <= 90 ? 'var(--w3)' : 'var(--w4)';
+const fmtTime = (d) => new Date(d).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const getJson = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); });
+
+// ---------- タブ ----------
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
+  $('tab-now').hidden = b.dataset.tab !== 'now';
+  $('tab-hourly').hidden = b.dataset.tab !== 'hourly';
+  if (b.dataset.tab === 'hourly' && !hourlyData) initHourly();
+}));
+
+// ---------- 現在 ----------
+async function loadNow() {
+  try {
+    now = await getJson('/api/now');
+    renderNow();
+  } catch {
+    $('updated').innerHTML = '<span class="error">サーバーに接続できません</span>';
+  }
+}
+
+function renderNow() {
+  const { latest } = now;
+  if (!latest) { $('updated').textContent = 'データ取得待ち…'; return; }
+  $('updated').textContent = `最終取得 ${fmtTime(latest.fetchedAt)}（5分ごとに自動更新）`;
+
+  const open = latest.rides.filter((r) => r.isOpen);
+  const avg = open.length ? Math.round(open.reduce((s, r) => s + r.wait, 0) / open.length) : 0;
+  const top = open.reduce((a, r) => (!a || r.wait > a.wait ? r : a), null);
+  const short = open.filter((r) => r.wait <= 20).length;
+  $('stats').innerHTML = `
+    <div class="stat"><div class="label">運営中</div><div class="value">${open.length}<small>/ ${latest.rides.length}</small></div></div>
+    <div class="stat"><div class="label">平均待ち時間（運営中）</div><div class="value">${avg}<small>分</small></div></div>
+    <div class="stat"><div class="label">最長</div><div class="value">${top ? top.wait : '–'}<small>分</small></div><div class="sub">${top ? esc(top.name) : ''}</div></div>
+    <div class="stat"><div class="label">20分以内</div><div class="value">${short}<small>件</small></div></div>`;
+
+  let rides = [...latest.rides];
+  if ($('hideClosed').checked) rides = rides.filter((r) => r.isOpen);
+  rides.sort($('sort').value === 'name'
+    ? (a, b) => a.name.localeCompare(b.name, 'ja')
+    : (a, b) => (b.isOpen - a.isOpen) || (b.wait - a.wait));
+  const max = Math.max(60, ...open.map((r) => r.wait));
+  const staleMs = 60 * 60 * 1000;
+
+  $('rides').innerHTML = rides.map((r) => {
+    const stale = r.isOpen && Date.now() - new Date(r.lastUpdated) > staleMs;
+    const bar = r.isOpen ? `<div class="bar" style="width:${(r.wait / max) * 100}%;--c:${color(r.wait)}"></div>` : '<div></div>';
+    return `<li class="ride ${r.isOpen ? '' : 'closed'} ${r.id === selectedId ? 'sel' : ''}" data-id="${r.id}">
+      <span class="name" title="${esc(r.name)}">${esc(r.name)}</span>${bar}
+      <span class="wait">${r.isOpen ? r.wait + '分' : '休止'}${stale ? `<span class="stale">${fmtTime(r.lastUpdated)}時点</span>` : ''}</span></li>`;
+  }).join('');
+
+  if (selectedId) renderTrend();
+}
+
+function renderTrend() {
+  const ride = now.latest.rides.find((r) => r.id === selectedId);
+  const pts = (now.today[selectedId] || []).filter(([, w]) => w != null);
+  $('trendTitle').textContent = `本日の推移：${ride ? ride.name : ''}`;
+  if (pts.length < 2) {
+    $('trend').innerHTML = '<p class="hint">記録が2点以上たまると推移を表示します（5分ごとに記録）。</p>';
+    return;
+  }
+  const W = 900, H = 220, L = 36, R = 12, T = 10, B = 24;
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+  const yMax = Math.max(30, Math.ceil(Math.max(...pts.map((p) => p[1])) / 30) * 30);
+  const x = (t) => L + ((t - t0) / (t1 - t0 || 1)) * (W - L - R);
+  const y = (w) => T + (1 - w / yMax) * (H - T - B);
+  const grid = [];
+  for (let v = 0; v <= yMax; v += 30) grid.push(`<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`);
+  const ticks = [];
+  const n = Math.min(6, pts.length);
+  for (let i = 0; i < n; i++) {
+    const t = t0 + ((t1 - t0) * i) / (n - 1);
+    ticks.push(`<text x="${x(t)}" y="${H - 6}" text-anchor="middle">${fmtTime(t)}</text>`);
+  }
+  const line = pts.map(([t, w], i) => `${i ? 'L' : 'M'}${x(t).toFixed(1)},${y(w).toFixed(1)}`).join('');
+  const dots = pts.map(([t, w]) => `<circle cx="${x(t)}" cy="${y(w)}" r="2.5" fill="var(--accent)"><title>${fmtTime(t)} ${w}分</title></circle>`).join('');
+  $('trend').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="待ち時間の推移">
+    ${grid.join('')}${ticks.join('')}
+    <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2"/>${dots}</svg>`;
+}
+
+$('rides').addEventListener('click', (e) => {
+  const li = e.target.closest('.ride');
+  if (!li) return;
+  selectedId = Number(li.dataset.id);
+  renderNow();
+});
+$('sort').addEventListener('change', renderNow);
+$('hideClosed').addEventListener('change', renderNow);
+
+// ---------- 時間帯分析 ----------
+async function initHourly() {
+  try {
+    const { months, years } = await getJson('/api/periods');
+    const opt = (v, label) => `<option value="${v}">${label}</option>`;
+    $('period').innerHTML =
+      `<optgroup label="月">${months.map((m) => opt(m, `${m.slice(0, 4)}年${Number(m.slice(5))}月`)).join('')}</optgroup>` +
+      `<optgroup label="年">${years.map((y) => opt(y, `${y}年`)).join('')}</optgroup>` +
+      opt('all', '全期間');
+    await loadHourly();
+  } catch {
+    $('heat').innerHTML = '<p class="hint error">データを読み込めませんでした。</p>';
+  }
+}
+
+async function loadHourly() {
+  hourlyData = await getJson(`/api/hourly?period=${encodeURIComponent($('period').value)}`);
+  renderHourly();
+}
+
+function renderHourly() {
+  const d = hourlyData;
+  $('periodInfo').textContent = `記録日数 ${d.days}日`;
+  if (!d.rides.length) {
+    $('heat').innerHTML = '<p class="hint">この期間の記録はまだありません。</p>';
+    $('hourChart').innerHTML = '';
+    return;
+  }
+  const cell = (v, n) => v == null ? '<td></td>' : `<td style="--c:${color(v)}" title="${v}分（${n}件の平均）">${v}</td>`;
+  const parkAvg = Math.round(Object.values(d.park).reduce((s, v) => s + v, 0) / Object.values(d.park).length);
+  const head = `<tr><th></th>${d.hours.map((h) => `<th>${h}時</th>`).join('')}<th>平均</th></tr>`;
+  const parkRow = `<tr class="row park ${selectedHourId === 'park' ? 'sel' : ''}" data-id="park"><th class="rname">パーク全体</th>${d.hours.map((h) => cell(d.park[h], '')).join('')}<td class="avg">${parkAvg}</td></tr>`;
+  const rows = d.rides.map((r) => `<tr class="row ${String(r.id) === String(selectedHourId) ? 'sel' : ''}" data-id="${r.id}">
+    <th class="rname" title="${esc(r.name)}">${esc(r.name)}</th>
+    ${d.hours.map((h) => r.byHour[h] ? cell(r.byHour[h].avg, r.byHour[h].n) : '<td></td>').join('')}
+    <td class="avg">${r.avg}</td></tr>`).join('');
+  $('heat').innerHTML = `<table class="heat"><thead>${head}</thead><tbody>${parkRow}${rows}</tbody></table>`;
+  renderHourChart();
+}
+
+function renderHourChart() {
+  const d = hourlyData;
+  const ride = selectedHourId === 'park' ? null : d.rides.find((r) => String(r.id) === String(selectedHourId));
+  const vals = d.hours.map((h) => ride ? (ride.byHour[h] ? ride.byHour[h].avg : null) : d.park[h]);
+  $('hourTitle').textContent = `時間帯別の平均待ち時間：${ride ? ride.name : 'パーク全体'}`;
+
+  const W = 900, H = 240, L = 36, R = 12, T = 12, B = 24;
+  const yMax = Math.max(30, Math.ceil(Math.max(...vals.filter((v) => v != null), ...d.hours.map((h) => d.park[h])) / 30) * 30);
+  const bw = (W - L - R) / d.hours.length;
+  const y = (v) => T + (1 - v / yMax) * (H - T - B);
+  const grid = [];
+  for (let v = 0; v <= yMax; v += 30) grid.push(`<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`);
+  const bars = d.hours.map((h, i) => {
+    const v = vals[i];
+    const x = L + i * bw;
+    const label = `<text x="${x + bw / 2}" y="${H - 6}" text-anchor="middle">${h}時</text>`;
+    if (v == null) return label;
+    return `${label}<rect x="${x + bw * 0.15}" y="${y(v)}" width="${bw * 0.7}" height="${y(0) - y(v)}" rx="2" fill="${color(v)}"><title>${h}時台 ${v}分</title></rect>`;
+  }).join('');
+  // アトラクション選択時はパーク平均を折れ線で重ねる
+  const parkLine = ride ? `<path d="${d.hours.map((h, i) => `${i ? 'L' : 'M'}${(L + i * bw + bw / 2).toFixed(1)},${y(d.park[h]).toFixed(1)}`).join('')}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="5 4"/>
+    <text x="${W - R}" y="${T + 10}" text-anchor="end" style="fill:var(--accent)">--- パーク平均</text>` : '';
+  $('hourChart').innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="時間帯別の平均待ち時間">${grid.join('')}${bars}${parkLine}</svg>`;
+}
+
+$('period').addEventListener('change', loadHourly);
+$('heat').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr.row');
+  if (!tr) return;
+  selectedHourId = tr.dataset.id;
+  renderHourly();
+});
+
+loadNow();
+setInterval(loadNow, 60 * 1000); // サーバー側は5分間隔で取得。表示は1分ごとに同期
+</script>
+</body>
+</html>

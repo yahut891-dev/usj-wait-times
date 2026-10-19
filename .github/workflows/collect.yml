@@ -1,0 +1,35 @@
+# PCの電源に関係なく、GitHub上で5分ごとに待ち時間を記録する（data/cloud/ にコミット）
+name: collect-wait-times
+
+on:
+  schedule:
+    # UTC表記。日本時間 7:00〜23:55 の間、5分ごと（GitHub側の混雑で遅延することがある）
+    - cron: '*/5 22-23,0-14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node collect.js --dir data/cloud
+      - name: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/cloud
+          git diff --cached --quiet && exit 0
+          git commit -m "collect: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git pull --rebase
+          git push
