@@ -35,6 +35,42 @@ node server.js
 - `server.js` は、フォルダがGitリポジトリなら1時間ごとに `git pull` して `data/cloud/` を取り込みます。
 - 過去データのさかのぼり取得はできません（Queue-Times等の履歴ページはボット対策で取得不可）。記録は収集を始めた時点からです。
 
+### 外部cronで5分ごとに実行する（cron-job.org）
+
+GitHub の `schedule` は混雑時に後回しにされ、実行間隔が数時間空くことがあります（2026-10-20 時点で約20時間に2回）。cron-job.org（無料）から5分ごとに `workflow_dispatch` を呼び出して補います。`schedule` は予備として残します。
+
+**1. GitHubでトークンを作成**
+
+1. GitHub右上のアイコン → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token
+2. 次のとおり設定して Generate token
+   - Token name: `cron-job-usj-wait-times`（任意）
+   - Expiration: 任意（期限が切れたら作り直して cron-job.org 側を差し替える）
+   - Repository access: **Only select repositories** → `usj-wait-times`
+   - Permissions → Repository permissions → **Actions: Read and write**（他は変更しない）
+3. 表示されたトークンを控える（再表示されません。チャット等には貼らないこと）
+
+**2. cron-job.org でジョブを作成**
+
+1. https://cron-job.org/ でアカウントを作成し、ダッシュボードの **CREATE CRONJOB**
+2. COMMON タブ
+   - Title: `usj-wait-times collect`
+   - URL: `https://api.github.com/repos/yahut891-dev/usj-wait-times/actions/workflows/collect.yml/dispatches`
+   - Execution schedule: Custom → 分 `*/5`（5分ごと）、時 `7-23`、タイムゾーン `Asia/Tokyo`
+3. ADVANCED タブ
+   - Request method: **POST**
+   - Headers（4つ）
+     - `Accept`: `application/vnd.github+json`
+     - `Authorization`: `Bearer <1で作成したトークン>`
+     - `X-GitHub-Api-Version`: `2022-11-28`
+     - `Content-Type`: `application/json`
+   - Request body: `{"ref":"main"}`
+4. 通知設定で「実行失敗時に通知」を有効にして保存
+
+**3. 動作確認**
+
+- cron-job.org の TEST RUN で、応答が **204** なら成功です（401/403はトークンか権限、404はURLかトークンの対象リポジトリの誤り）。
+- GitHub の Actions タブに、event が `workflow_dispatch` の実行が追加されていることを確認します。
+
 ### タスクスケジューラ登録（任意）
 
 `run_collect.bat` を「5分ごとに繰り返し」で登録します。`server.js` 起動中と重複しても集計時にまとめられるので問題ありません。
