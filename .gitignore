@@ -1,4 +1,5 @@
 # ローカル収集分はPC内だけに保持（GitHub側は data/cloud/ を使う）
 data/local/
 data/collect.log
+data/collect.err.log
 _site/

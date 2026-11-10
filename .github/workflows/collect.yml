@@ -3,9 +3,10 @@
 name: collect-wait-times
 
 on:
-  schedule:
-    # UTC表記。日本時間 7:00〜23:55 の間、5分ごと（GitHub側の混雑で遅延することがある）
-    - cron: '*/5 22-23,0-14 * * *'
+  # 2026-11-10 ユーザー指示により定期実行を停止。再開する場合は以下のコメントを外す
+  # schedule:
+  #   # UTC表記。日本時間 7:00〜23:55 の間、5分ごと（GitHub側の混雑で遅延することがある）
+  #   - cron: '*/5 22-23,0-14 * * *'
   workflow_dispatch:
 
 concurrency:
